@@ -1,4 +1,4 @@
-# flutter_application_1
+# Shoestore
 
 A new Flutter project.
 
