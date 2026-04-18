@@ -5,7 +5,7 @@ import 'product_details_page.dart';
 import 'track_order_page.dart';
 import 'login_page.dart';
 import '../models/order_model.dart';
-import '../services/auth_manager.dart';
+import '../database/auth_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -189,7 +189,7 @@ class _HomeContentState extends State<HomeContent> {
     String? name;
 
     if (logged) {
-      name = await AuthManager.getFirstName();
+      name = await AuthManager.getName();
     }
 
     setState(() {
@@ -341,7 +341,6 @@ class ProductCard extends StatelessWidget {
               fit: BoxFit.cover,
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -354,11 +353,8 @@ class ProductCard extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-
                 Text(category, style: const TextStyle(color: Colors.grey)),
-
                 const SizedBox(height: 8),
-
                 Text(
                   "\$${price.toStringAsFixed(2)}",
                   style: const TextStyle(
@@ -366,9 +362,7 @@ class ProductCard extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(

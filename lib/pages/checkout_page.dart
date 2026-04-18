@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/services/auth_manager.dart';
+import '../../database/app_database.dart';
 import 'dart:math';
 
 import 'cart_manager.dart';
 import 'cart_item.dart';
 import '../../models/order_model.dart';
 import 'track_order_page.dart';
-import '../../services/auth_manager.dart';
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -32,11 +33,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _loadUserData() async {
-    final firstName = await AuthManager.getFirstName();
+    final name = await AuthManager.getName();
     final email = await AuthManager.getEmail();
 
+    if (!mounted) return;
+
     setState(() {
-      nameController.text = firstName ?? "";
+      nameController.text = name ?? "";
       emailController.text = email ?? "";
     });
   }
@@ -71,13 +74,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              /// SHIPPING INFO
               const Text(
                 "Shipping Information",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-
               Form(
                 key: _formKey,
                 child: Column(
@@ -94,29 +95,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              /// PAYMENT METHOD
               const Text(
                 "Payment Method",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-
               _paymentOption("Credit/Debit Card"),
               _paymentOption("PayPal"),
               _paymentOption("Bank Transfer"),
-
               const SizedBox(height: 20),
-
-              /// ORDER SUMMARY
               const Text(
                 "Order Summary",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-
               Card(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -127,9 +120,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   child: Column(
                     children: [
                       ...cart.cartItems.map((item) => _orderItem(item)),
-
                       const Divider(),
-
                       _buildRow("Subtotal", cart.subtotal),
                       _buildRow("Tax", cart.tax),
                       _buildRow("Shipping", 0),
@@ -139,10 +130,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              /// PLACE ORDER BUTTON
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -153,8 +141,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
+                  onPressed: () async {
+                    if (!_formKey.currentState!.validate()) return;
+
+                    try {
                       final order = OrderModel(
                         orderId: _generateOrderId(),
                         trackingNumber: _generateTrackingNumber(),
@@ -162,24 +152,55 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         estimatedDelivery: DateTime.now().add(
                           const Duration(days: 4),
                         ),
-                        name: nameController.text,
-                        address: addressController.text,
-                        city: cityController.text,
-                        zip: zipController.text,
+                        name: nameController.text.trim(),
+                        address: addressController.text.trim(),
+                        city: cityController.text.trim(),
+                        zip: zipController.text.trim(),
                         items: List.from(cart.cartItems),
                       );
 
-                      // SAVE order to lastOrder
-                      OrderModel.lastOrder = order;
+                      await AppDatabase.instance.insertOrder(
+                        {
+                          'order_id': order.orderId,
+                          'tracking_number': order.trackingNumber,
+                          'order_date': order.orderDate.toIso8601String(),
+                          'estimated_delivery':
+                              order.estimatedDelivery.toIso8601String(),
+                          'name': order.name,
+                          'address': order.address,
+                          'city': order.city,
+                          'zip': order.zip,
+                          'total': cart.total,
+                          'payment_method': paymentMethod,
+                        },
+                        order.items.map((item) {
+                          return {
+                            'order_id': order.orderId,
+                            'product_name': item.name,
+                            'price': item.price,
+                            'size': item.size,
+                            'quantity': item.quantity,
+                            'image': item.image,
+                          };
+                        }).toList(),
+                      );
 
+                      OrderModel.lastOrder = order;
                       cart.clearCart();
 
-                      // Navigate to TrackOrderPage
+                      if (!mounted) return;
+
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
                           builder: (_) => TrackOrderPage(order: order),
                         ),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Order failed: $e")),
                       );
                     }
                   },
@@ -204,10 +225,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          vertical: 14,
-          horizontal: 16,
-        ),
       ),
       validator: (val) {
         if (val == null || val.isEmpty) return "Please enter $label";
@@ -219,13 +236,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Widget _paymentOption(String title) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: paymentMethod == title ? Colors.black : Colors.grey.shade300,
-        ),
-      ),
       child: RadioListTile<String>(
         title: Text(title),
         value: title,
@@ -241,7 +251,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Widget _orderItem(CartItem item) {
     return ListTile(
-      contentPadding: EdgeInsets.zero,
       title: Text(item.name),
       subtitle: Text("Size: ${item.size} × ${item.quantity}"),
       trailing: Text("\$${(item.price * item.quantity).toStringAsFixed(2)}"),
@@ -249,35 +258,30 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Widget _buildRow(String title, double value, {bool isBold = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title),
-          Text(
-            value == 0 ? "FREE" : "\$${value.toStringAsFixed(2)}",
-            style: TextStyle(
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-            ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title),
+        Text(
+          value == 0 ? "FREE" : "\$${value.toStringAsFixed(2)}",
+          style: TextStyle(
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   String _generateOrderId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    Random rnd = Random();
-    return List.generate(
-      10,
-      (index) => chars[rnd.nextInt(chars.length)],
-    ).join();
+    final rnd = Random();
+    return List.generate(10, (_) => chars[rnd.nextInt(chars.length)]).join();
   }
 
   String _generateTrackingNumber() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    Random rnd = Random();
-    return "TRK${List.generate(12, (index) => chars[rnd.nextInt(chars.length)]).join()}";
+    final rnd = Random();
+    return "TRK" +
+        List.generate(12, (_) => chars[rnd.nextInt(chars.length)]).join();
   }
 }
